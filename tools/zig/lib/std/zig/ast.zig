@@ -63,6 +63,10 @@ pub const Tree = struct {
         return buffer.toOwnedSlice();
     }
 
+    /// `gpa` is used for allocating the resulting formatted source code, as well as
+    /// for allocating extra stack memory if needed, because this function utilizes recursion.
+    /// Note: that's not actually true yet, see https://github.com/ziglang/zig/issues/1006.
+    /// Caller owns the returned slice of bytes, allocated with `gpa`.
     pub fn renderJson(tree: Tree, gpa: *mem.Allocator) RenderError![]u8 {
         var buffer = std.ArrayList(u8).init(gpa);
         defer buffer.deinit();
