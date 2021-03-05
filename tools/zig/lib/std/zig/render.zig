@@ -49,6 +49,8 @@ pub fn renderTreeJson(buffer: *std.ArrayList(u8), tree: ast.Tree) Error!void {
     };
     const ais = &auto_indenting_stream;
 
+    try startObject(ais);
+
     // Render all the line comments at the beginning of the file.
     const comment_end_loc = tree.tokens.items(.start)[0];
     _ = try renderComments(ais, tree, 0, comment_end_loc);
@@ -58,6 +60,8 @@ pub fn renderTreeJson(buffer: *std.ArrayList(u8), tree: ast.Tree) Error!void {
     }
 
     try renderMembersJson(buffer.allocator, ais, tree, tree.rootDecls());
+
+    try endObject(ais);
 
     if (ais.disabled_offset) |disabled_offset| {
         try writeFixingWhitespace(ais.underlying_writer, tree.source[disabled_offset..]);
@@ -91,6 +95,8 @@ fn renderMemberJson(gpa: *Allocator, ais: *Ais, tree: ast.Tree, decl: ast.Node.I
     try renderDocComments(ais, tree, tree.firstToken(decl));
     switch (tree.nodes.items(.tag)[decl]) {
         .fn_decl => {
+            try startObject(ais);
+            try jsonKeyString(ais, "class", "fn_decl");
             // Some examples:
             // pub extern "foo" fn ...
             // export fn ...
@@ -115,17 +121,22 @@ fn renderMemberJson(gpa: *Allocator, ais: *Ais, tree: ast.Tree, decl: ast.Node.I
                     },
                 }
             }
+            try jsonKey(ais, "fn_modifiers");
+            try startArray(ais);
             while (i < fn_token) : (i += 1) {
                 if (token_tags[i] == .keyword_inline) {
                     // TODO remove this special case when 0.9.0 is released.
                     // See the commit that introduced this comment for more details.
                     continue;
                 }
-                try renderTokenJson(ais, tree, i, .space);
+                try renderTokenJsonKeyword(ais, tree, i, .space);
             }
+            try endArray(ais);
             assert(datas[decl].rhs != 0);
             try renderExpression(gpa, ais, tree, fn_proto, .space);
-            return renderExpression(gpa, ais, tree, datas[decl].rhs, space);
+            var finalValue = renderExpression(gpa, ais, tree, datas[decl].rhs, space);
+            try endObject(ais);
+            return finalValue;
         },
         .fn_proto_simple,
         .fn_proto_multi,
@@ -2409,16 +2420,45 @@ const Space = enum {
     skip,
 };
 
-fn renderTokenJson(ais: *Ais, tree: ast.Tree, token_index: ast.TokenIndex, space: Space) Error!void {
+fn jsonKey(ais: *Ais, key: []const u8) Error!void {
+    try ais.writer().writeAll("\"");
+    try ais.writer().writeAll(key);
+    try ais.writer().writeAll("\":");
+}
+
+fn jsonKeyString(ais: *Ais, key: []const u8, string: []const u8) Error!void {
+    try jsonKey(ais, key);
+    try ais.writer().writeAll("\"");
+    try ais.writer().writeAll(string);
+    try ais.writer().writeAll("\",");
+}
+
+fn startArray(ais: *Ais) Error!void {
+    try ais.writer().writeAll("[");
+}
+
+fn endArray(ais: *Ais) Error!void {
+    try ais.writer().writeAll("],");
+}
+
+fn startObject(ais: *Ais) Error!void {
+    try ais.writer().writeAll("{");
+}
+
+fn endObject(ais: *Ais) Error!void {
+    try ais.writer().writeAll("},");
+}
+
+fn renderTokenJsonKeyword(ais: *Ais, tree: ast.Tree, token_index: ast.TokenIndex, space: Space) Error!void {
     const token_tags = tree.tokens.items(.tag);
     const token_starts = tree.tokens.items(.start);
 
     const token_start = token_starts[token_index];
     const lexeme = tokenSliceForRender(tree, token_index);
 
-    try ais.writer().writeAll("\"keyword\":\"");
-    try ais.writer().writeAll(lexeme);
     try ais.writer().writeAll("\"");
+    try ais.writer().writeAll(lexeme);
+    try ais.writer().writeAll("\",");
 
     if (space == .skip) return;
 
