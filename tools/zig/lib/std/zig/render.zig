@@ -18,6 +18,29 @@ pub const Error = ast.Tree.RenderError;
 
 const Ais = AutoIndentingStream(std.ArrayList(u8).Writer);
 
+pub fn jsonRenderTree(buffer: *std.ArrayList(u8), tree: ast.Tree) Error!void {
+    assert(tree.errors.len == 0); // Cannot render an invalid tree.
+    var auto_indenting_stream = Ais{
+        .indent_delta = indent_delta,
+        .underlying_writer = buffer.writer(),
+    };
+    const ais = &auto_indenting_stream;
+
+    // Render all the line comments at the beginning of the file.
+    const comment_end_loc = tree.tokens.items(.start)[0];
+    _ = try renderComments(ais, tree, 0, comment_end_loc);
+
+    if (tree.tokens.items(.tag)[0] == .container_doc_comment) {
+        try renderContainerDocComments(ais, tree, 0);
+    }
+
+    try renderMembers(buffer.allocator, ais, tree, tree.rootDecls());
+
+    if (ais.disabled_offset) |disabled_offset| {
+        try writeFixingWhitespace(ais.underlying_writer, tree.source[disabled_offset..]);
+    }
+}
+
 pub fn renderTree(buffer: *std.ArrayList(u8), tree: ast.Tree) Error!void {
     assert(tree.errors.len == 0); // Cannot render an invalid tree.
     var auto_indenting_stream = Ais{
