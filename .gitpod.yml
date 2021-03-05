@@ -8,7 +8,12 @@ ports:
 
 tasks:
   - name: zig build run
-    init: ./tools/update-tools.sh
+    init:
+      mv tools/zig/lib/std/zig aside-zig
+      && ./tools/update-tools.sh
+      && diff -r baseline/tools/zig/lib/std/zig tools/zig/lib/std/zig
+      && rm -rf tools/zig/lib/std/zig
+      && mv aside-zig tools/zig/lib/std/zig
     command:
       export PATH=./tools/zig:$PATH
       && echo building ...
