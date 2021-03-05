@@ -200,6 +200,7 @@ fn renderMemberJson(gpa: *Allocator, ais: *Ais, tree: ast.Tree, decl: ast.Node.I
     const main_tokens = tree.nodes.items(.main_token);
     const datas = tree.nodes.items(.data);
     try renderDocComments(ais, tree, tree.firstToken(decl));
+    try renderTagJson(ais, tree.nodes.items(.tag)[decl]);
     switch (tree.nodes.items(.tag)[decl]) {
         .fn_decl => {
             // Some examples:
@@ -2408,6 +2409,12 @@ const Space = enum {
     /// *must* handle handle whitespace and comments manually.
     skip,
 };
+
+fn renderTagJson(ais: *Ais, tag: ast.Node.Tag) Error!void {
+    try ais.writer().writeAll("<");
+    try ais.writer().writeAll(@tagName(tag));
+    try ais.writer().writeAll(">");
+}
 
 fn renderToken(ais: *Ais, tree: ast.Tree, token_index: ast.TokenIndex, space: Space) Error!void {
     const token_tags = tree.tokens.items(.tag);
