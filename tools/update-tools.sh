@@ -10,6 +10,8 @@ wget --quiet --output-document=- $ZIG | tar Jx
 mv zig-linux-x86_64-* zig
 echo zig version $(./zig/zig version)
 
+exit 0
+
 echo installing latest zls - zig language server
 git clone --quiet --recurse-submodules https://github.com/zigtools/zls
 cd zls
