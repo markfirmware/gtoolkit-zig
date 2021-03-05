@@ -63,8 +63,20 @@ pub const Tree = struct {
         return buffer.toOwnedSlice();
     }
 
+    pub fn renderJson(tree: Tree, gpa: *mem.Allocator) RenderError![]u8 {
+        var buffer = std.ArrayList(u8).init(gpa);
+        defer buffer.deinit();
+
+        try tree.renderToArrayListJson(&buffer);
+        return buffer.toOwnedSlice();
+    }
+
     pub fn renderToArrayList(tree: Tree, buffer: *std.ArrayList(u8)) RenderError!void {
         return @import("./render.zig").renderTree(buffer, tree);
+    }
+
+    pub fn renderToArrayListJson(tree: Tree, buffer: *std.ArrayList(u8)) RenderError!void {
+        return @import("./render.zig").renderTreeJson(buffer, tree);
     }
 
     pub fn tokenLocation(self: Tree, start_offset: ByteOffset, token_index: TokenIndex) Location {

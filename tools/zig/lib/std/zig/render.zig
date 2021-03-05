@@ -41,6 +41,29 @@ pub fn renderTree(buffer: *std.ArrayList(u8), tree: ast.Tree) Error!void {
     }
 }
 
+pub fn renderTreeJson(buffer: *std.ArrayList(u8), tree: ast.Tree) Error!void {
+    assert(tree.errors.len == 0); // Cannot render an invalid tree.
+    var auto_indenting_stream = Ais{
+        .indent_delta = indent_delta,
+        .underlying_writer = buffer.writer(),
+    };
+    const ais = &auto_indenting_stream;
+
+    // Render all the line comments at the beginning of the file.
+    const comment_end_loc = tree.tokens.items(.start)[0];
+    _ = try renderComments(ais, tree, 0, comment_end_loc);
+
+    if (tree.tokens.items(.tag)[0] == .container_doc_comment) {
+        try renderContainerDocComments(ais, tree, 0);
+    }
+
+    try renderMembersJson(buffer.allocator, ais, tree, tree.rootDecls());
+
+    if (ais.disabled_offset) |disabled_offset| {
+        try writeFixingWhitespace(ais.underlying_writer, tree.source[disabled_offset..]);
+    }
+}
+
 /// Render all members in the given slice, keeping empty lines where appropriate
 fn renderMembers(gpa: *Allocator, ais: *Ais, tree: ast.Tree, members: []const ast.Node.Index) Error!void {
     if (members.len == 0) return;
@@ -48,6 +71,127 @@ fn renderMembers(gpa: *Allocator, ais: *Ais, tree: ast.Tree, members: []const as
     for (members[1..]) |member| {
         try renderExtraNewline(ais, tree, member);
         try renderMember(gpa, ais, tree, member, .newline);
+    }
+}
+
+/// Render all members in the given slice, keeping empty lines where appropriate
+fn renderMembersJson(gpa: *Allocator, ais: *Ais, tree: ast.Tree, members: []const ast.Node.Index) Error!void {
+    if (members.len == 0) return;
+    try renderMemberJson(gpa, ais, tree, members[0], .newline);
+    for (members[1..]) |member| {
+        try renderExtraNewline(ais, tree, member);
+        try renderMemberJson(gpa, ais, tree, member, .newline);
+    }
+}
+
+fn renderMemberJson(gpa: *Allocator, ais: *Ais, tree: ast.Tree, decl: ast.Node.Index, space: Space) Error!void {
+    const token_tags = tree.tokens.items(.tag);
+    const main_tokens = tree.nodes.items(.main_token);
+    const datas = tree.nodes.items(.data);
+    try renderDocComments(ais, tree, tree.firstToken(decl));
+    switch (tree.nodes.items(.tag)[decl]) {
+        .fn_decl => {
+            // Some examples:
+            // pub extern "foo" fn ...
+            // export fn ...
+            const fn_proto = datas[decl].lhs;
+            const fn_token = main_tokens[fn_proto];
+            // Go back to the first token we should render here.
+            var i = fn_token;
+            while (i > 0) {
+                i -= 1;
+                switch (token_tags[i]) {
+                    .keyword_extern,
+                    .keyword_export,
+                    .keyword_pub,
+                    .string_literal,
+                    .keyword_inline,
+                    .keyword_noinline,
+                    => continue,
+
+                    else => {
+                        i += 1;
+                        break;
+                    },
+                }
+            }
+            while (i < fn_token) : (i += 1) {
+                if (token_tags[i] == .keyword_inline) {
+                    // TODO remove this special case when 0.9.0 is released.
+                    // See the commit that introduced this comment for more details.
+                    continue;
+                }
+                try renderTokenJson(ais, tree, i, .space);
+            }
+            assert(datas[decl].rhs != 0);
+            try renderExpression(gpa, ais, tree, fn_proto, .space);
+            return renderExpression(gpa, ais, tree, datas[decl].rhs, space);
+        },
+        .fn_proto_simple,
+        .fn_proto_multi,
+        .fn_proto_one,
+        .fn_proto,
+        => {
+            // Extern function prototypes are parsed as these tags.
+            // Go back to the first token we should render here.
+            const fn_token = main_tokens[decl];
+            var i = fn_token;
+            while (i > 0) {
+                i -= 1;
+                switch (token_tags[i]) {
+                    .keyword_extern,
+                    .keyword_export,
+                    .keyword_pub,
+                    .string_literal,
+                    .keyword_inline,
+                    .keyword_noinline,
+                    => continue,
+
+                    else => {
+                        i += 1;
+                        break;
+                    },
+                }
+            }
+            while (i < fn_token) : (i += 1) {
+                try renderToken(ais, tree, i, .space);
+            }
+            try renderExpression(gpa, ais, tree, decl, .none);
+            return renderToken(ais, tree, tree.lastToken(decl) + 1, space); // semicolon
+        },
+
+        .@"usingnamespace" => {
+            const main_token = main_tokens[decl];
+            const expr = datas[decl].lhs;
+            if (main_token > 0 and token_tags[main_token - 1] == .keyword_pub) {
+                try renderToken(ais, tree, main_token - 1, .space); // pub
+            }
+            try renderToken(ais, tree, main_token, .space); // usingnamespace
+            try renderExpression(gpa, ais, tree, expr, .none);
+            return renderToken(ais, tree, tree.lastToken(expr) + 1, space); // ;
+        },
+
+        .global_var_decl => return renderVarDecl(gpa, ais, tree, tree.globalVarDecl(decl)),
+        .local_var_decl => return renderVarDecl(gpa, ais, tree, tree.localVarDecl(decl)),
+        .simple_var_decl => return renderVarDecl(gpa, ais, tree, tree.simpleVarDecl(decl)),
+        .aligned_var_decl => return renderVarDecl(gpa, ais, tree, tree.alignedVarDecl(decl)),
+
+        .test_decl => {
+            const test_token = main_tokens[decl];
+            try renderToken(ais, tree, test_token, .space);
+            if (token_tags[test_token + 1] == .string_literal) {
+                try renderToken(ais, tree, test_token + 1, .space);
+            }
+            try renderExpression(gpa, ais, tree, datas[decl].rhs, space);
+        },
+
+        .container_field_init => return renderContainerField(gpa, ais, tree, tree.containerFieldInit(decl), space),
+        .container_field_align => return renderContainerField(gpa, ais, tree, tree.containerFieldAlign(decl), space),
+        .container_field => return renderContainerField(gpa, ais, tree, tree.containerField(decl), space),
+        .@"comptime" => return renderExpression(gpa, ais, tree, decl, space),
+
+        .root => unreachable,
+        else => unreachable,
     }
 }
 
@@ -2264,6 +2408,51 @@ const Space = enum {
     /// *must* handle handle whitespace and comments manually.
     skip,
 };
+
+fn renderTokenJson(ais: *Ais, tree: ast.Tree, token_index: ast.TokenIndex, space: Space) Error!void {
+    const token_tags = tree.tokens.items(.tag);
+    const token_starts = tree.tokens.items(.start);
+
+    const token_start = token_starts[token_index];
+    const lexeme = tokenSliceForRender(tree, token_index);
+
+    try ais.writer().writeAll("\"keyword\":\"");
+    try ais.writer().writeAll(lexeme);
+    try ais.writer().writeAll("\"");
+
+    if (space == .skip) return;
+
+    if (space == .comma and token_tags[token_index + 1] != .comma) {
+        try ais.writer().writeByte(',');
+    }
+
+    const comment = try renderComments(ais, tree, token_start + lexeme.len, token_starts[token_index + 1]);
+    switch (space) {
+        .none => {},
+        .space => if (!comment) try ais.writer().writeByte(' '),
+        .newline => if (!comment) try ais.insertNewline(),
+
+        .comma => if (token_tags[token_index + 1] == .comma) {
+            try renderToken(ais, tree, token_index + 1, .newline);
+        } else if (!comment) {
+            try ais.insertNewline();
+        },
+
+        .comma_space => if (token_tags[token_index + 1] == .comma) {
+            try renderToken(ais, tree, token_index + 1, .space);
+        } else if (!comment) {
+            try ais.writer().writeByte(' ');
+        },
+
+        .semicolon => if (token_tags[token_index + 1] == .semicolon) {
+            try renderToken(ais, tree, token_index + 1, .newline);
+        } else if (!comment) {
+            try ais.insertNewline();
+        },
+
+        .skip => unreachable,
+    }
+}
 
 fn renderToken(ais: *Ais, tree: ast.Tree, token_index: ast.TokenIndex, space: Space) Error!void {
     const token_tags = tree.tokens.items(.tag);
