@@ -4,7 +4,7 @@ ports:
   - port: 5900
     onOpen: ignore
   - port: 6080
-    onOpen: open-browser
+    onOpen: ignore
 
 tasks:
   - name: zig build run
@@ -13,9 +13,3 @@ tasks:
       export PATH=./tools/zig:$PATH
       && echo building ...
       && zig build run
-
-vscode:
-  extensions:
-    - augusterame.zls-vscode@1.0.4:ZQxqRwcEt9rZuan0J+3BRQ==
-    - tiehuis.zig@0.2.5:Yj8BTORJw/zERdoSGPf+eQ==
-    - lorenzopirro.zig-snippets@2.1.0:yjJl88xYcmvLdSifCQMz7g==
