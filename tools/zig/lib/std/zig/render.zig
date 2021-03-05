@@ -89,6 +89,7 @@ fn renderMember(gpa: *Allocator, ais: *Ais, tree: ast.Tree, decl: ast.Node.Index
     const main_tokens = tree.nodes.items(.main_token);
     const datas = tree.nodes.items(.data);
     try renderDocComments(ais, tree, tree.firstToken(decl));
+    try renderTagJson(ais, tree.nodes.items(.tag)[decl]);
     switch (tree.nodes.items(.tag)[decl]) {
         .fn_decl => {
             // Some examples:

@@ -5,7 +5,7 @@ pub fn main() anyerror!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     var alloc = &arena.allocator;
-    var tree = try parse(alloc, "pub fn function () void {}");
+    var tree = try parse(alloc, "var x = 1; const y = 2; pub fn function () void {}");
     var rendering1 = try tree.render(alloc);
     std.log.info("{s}", .{rendering1});
     var rendering2 = try tree.renderJson(alloc);
