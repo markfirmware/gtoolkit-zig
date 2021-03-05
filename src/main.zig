@@ -8,6 +8,4 @@ pub fn main() anyerror!void {
     var tree = try parse(alloc, "fn function () void {}");
     var rendering = try tree.render(alloc);
     std.log.info("{s}", .{rendering});
-    var json = try tree.jsonRender(alloc);
-    std.log.info("{s}", .{json});
 }
